@@ -92,6 +92,9 @@ export const ProxyService = {
     getStoredServer() {
         return sessionStorage.getItem(STORAGE_KEYS.SERVER) || '';
     },
+    clearStoredServer() {
+        sessionStorage.removeItem(STORAGE_KEYS.SERVER);
+    },
 };
 
 export const AuthService = {

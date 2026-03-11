@@ -97,13 +97,18 @@
                 <div class="hero">
                     <h2>Welcome to the Future of Browser Play</h2>
                     <p>Play Minecraft 1.8 in the browser with Eaglercraft — singleplayer, multiplayer, and shared worlds.</p>
-                    <div class="action-bar">
-                        <button id="btn-play" class="btn-primary">PLAY NOW</button>
-                        <select id="version-select" class="fancy-select">
-                            <option value="1.20.1">Loading Versions...</option>
-                        </select>
-                    </div>
+                <div class="action-bar">
+                    <button id="btn-play" class="btn-primary">PLAY NOW</button>
+                    <select id="version-select" class="fancy-select">
+                        <option value="1.20.1">Loading Versions...</option>
+                    </select>
                 </div>
+                <div class="launch-meta" id="launch-meta">
+                    <span id="active-server-label">Server: None</span>
+                    <span id="last-played-label">Last played: never</span>
+                    <span class="hint">Tip: Press <kbd>P</kbd> to launch instantly</span>
+                </div>
+            </div>
                 <div class="news-grid">
                     <div class="news-card">
                         <h3>Eaglercraft 1.8</h3>
@@ -189,6 +194,7 @@
                         <input type="text" id="server-ip" placeholder="e.g. play.hypixel.net" style="flex: 1;">
                         <button class="btn-primary" id="btn-connect-proxy" style="padding: 10px 24px;">PROXY &
                             PLAY</button>
+                        <button class="btn-secondary" id="btn-clear-proxy" style="padding: 10px 18px;" type="button">CLEAR</button>
                     </div>
                     <div id="proxy-status" style="margin-top: 15px; font-size: 0.8rem; height: 20px;"></div>
                 </div>
