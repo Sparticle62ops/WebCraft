@@ -1,7 +1,14 @@
-import { VersionService } from './services.js';
-import { ModrinthService } from './services.js';
-import { AuthService } from './services.js';
+import { VersionService, ModrinthService, AuthService, ProxyService } from './services.js';
 import { GameEngine } from './engine.js';
+
+const STORAGE_MOD_LOADER = 'webcraft_mod_loader';
+
+function escapeHtml(s) {
+    if (s == null) return '';
+    const div = document.createElement('div');
+    div.textContent = s;
+    return div.innerHTML;
+}
 
 document.addEventListener('DOMContentLoaded', async () => {
     const tabs = document.querySelectorAll('.nav-item');
@@ -21,35 +28,26 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     };
 
-    // Tab Switching
+    // Tab switching
     tabs.forEach(tab => {
         tab.addEventListener('click', () => {
             const target = tab.dataset.tab;
             tabs.forEach(t => t.classList.remove('active'));
             sections.forEach(s => s.classList.remove('active'));
             tab.classList.add('active');
-            document.getElementById(`tab-${target}`).classList.add('active');
+            const section = document.getElementById(`tab-${target}`);
+            if (section) section.classList.add('active');
         });
     });
 
-    // Variable Definitions
     const versionSelect = document.getElementById('version-select');
     const versionList = document.getElementById('version-list');
     const memRange = document.querySelector('input[type="range"]');
     const memLabel = document.getElementById('mem-label');
     const msBtn = document.getElementById('btn-ms-login');
     const offlineToggle = document.getElementById('offline-mode-toggle');
-
-    // Tab Switching
-    tabs.forEach(tab => {
-        tab.addEventListener('click', () => {
-            const target = tab.dataset.tab;
-            tabs.forEach(t => t.classList.remove('active'));
-            sections.forEach(s => s.classList.remove('active'));
-            tab.classList.add('active');
-            document.getElementById(`tab-${target}`).classList.add('active');
-        });
-    });
+    const offlineUsernameWrap = document.getElementById('offline-username-wrap');
+    const offlineUsernameInput = document.getElementById('offline-username-input');
 
     // Initialize Services
     window.selectVersion = (id) => {
@@ -57,26 +55,57 @@ document.addEventListener('DOMContentLoaded', async () => {
         document.querySelector('[data-tab="home"]').click();
     };
 
+    // Version list: loading then populate or error
+    if (versionList) versionList.innerHTML = '<div class="news-card" style="grid-column:1/-1;color:var(--text-dim);">Loading versions…</div>';
+    if (versionSelect) versionSelect.innerHTML = '<option value="">Loading…</option>';
     try {
         const versions = await VersionService.getVersions();
+        const releases = (versions || []).filter(v => v.type === 'release');
         if (versionSelect) {
-            const releases = versions.filter(v => v.type === 'release');
-            versionSelect.innerHTML = releases.slice(0, 15).map(v =>
+            versionSelect.innerHTML = releases.slice(0, 20).map(v =>
                 `<option value="${v.id}">${v.id}</option>`
             ).join('');
         }
-
         if (versionList) {
-            versionList.innerHTML = versions.slice(0, 30).map(v => `
-                <div class="version-item news-card">
-                    <h4>${v.id}</h4>
-                    <small>${v.type}</small>
-                    <button class="btn-primary" style="padding: 8px 16px; font-size: 0.8rem; margin-top: 10px;" onclick="window.selectVersion('${v.id}')">SELECT</button>
-                </div>
-            `).join('');
+            const list = (versions || []).slice(0, 40);
+            versionList.innerHTML = list.length
+                ? list.map(v => `
+                    <div class="version-item news-card">
+                        <h4>${escapeHtml(v.id)}</h4>
+                        <small>${escapeHtml(v.type || 'release')}</small>
+                        <button class="btn-primary" style="padding: 8px 16px; font-size: 0.8rem; margin-top: 10px;" type="button" data-select-version="${escapeHtml(v.id)}">SELECT</button>
+                    </div>
+                `).join('')
+                : '<div class="news-card" style="grid-column:1/-1;color:var(--text-dim);">No versions found.</div>';
+        }
+        const modVersionSelect = document.getElementById('mod-version-select');
+        if (modVersionSelect && releases.length) {
+            const opts = releases.slice(0, 25).map(v => `<option value="${escapeHtml(v.id)}">${escapeHtml(v.id)}</option>`).join('');
+            modVersionSelect.innerHTML = '<option value="">Any version</option>' + opts;
         }
     } catch (e) {
-        console.error("Failed to load versions:", e);
+        console.error('Failed to load versions:', e);
+        if (versionSelect) versionSelect.innerHTML = '<option value="1.8.9">1.8.9 (fallback)</option>';
+        if (versionList) versionList.innerHTML = '<div class="news-card" style="grid-column:1/-1;color:#ff5555;">Failed to load versions. Check connection.</div>';
+    }
+
+    // Version list: delegate SELECT clicks and search
+    if (versionList) {
+        versionList.addEventListener('click', (e) => {
+            const btn = e.target.closest('[data-select-version]');
+            if (btn) window.selectVersion(btn.dataset.selectVersion);
+        });
+    }
+    const versionSearchInput = document.querySelector('#tab-versions .search-bar input');
+    if (versionSearchInput && versionList) {
+        versionSearchInput.addEventListener('input', () => {
+            const q = (versionSearchInput.value || '').trim().toLowerCase();
+            const cards = versionList.querySelectorAll('.version-item');
+            cards.forEach(card => {
+                const id = (card.querySelector('h4') || {}).textContent || '';
+                card.style.display = !q || id.toLowerCase().includes(q) ? '' : 'none';
+            });
+        });
     }
 
     // Mod Search
@@ -86,46 +115,103 @@ document.addEventListener('DOMContentLoaded', async () => {
     const packList = document.getElementById('pack-list');
     const worldList = document.getElementById('world-list');
 
-    // Universal Search Function
     const renderList = (data, container, type) => {
-        container.innerHTML = data.map(m => `
-            <div class="mod-card news-card" style="display: flex; flex-direction: column; justify-content: space-between;">
-                <div>
-                    <div style="display:flex; align-items:center; gap:10px;">
-                        <img src="${m.icon_url || 'https://modrinth.com/favicon.ico'}" width="32" height="32" style="border-radius: 4px;">
-                        <h4 style="margin: 0;">${m.title}</h4>
+        if (!container) return;
+        const list = Array.isArray(data) ? data : [];
+        container.innerHTML = list.length
+            ? list.map(m => {
+                const desc = (m.description || '').slice(0, 80);
+                const safeTitle = escapeHtml(m.title || '');
+                const safeId = escapeHtml(m.project_id || '');
+                return `
+                    <div class="mod-card news-card" style="display: flex; flex-direction: column; justify-content: space-between;">
+                        <div>
+                            <div style="display:flex; align-items:center; gap:10px;">
+                                <img src="${escapeHtml(m.icon_url || 'https://modrinth.com/favicon.ico')}" width="32" height="32" style="border-radius: 4px;" alt="">
+                                <h4 style="margin: 0;">${safeTitle}</h4>
+                            </div>
+                            <p style="font-size: 0.7rem; color: var(--text-dim); margin-top:5px;">${escapeHtml(desc)}${desc.length >= 80 ? '…' : ''}</p>
+                        </div>
+                        <button class="btn-secondary" type="button" style="margin-top: 8px; width:100%;" data-add-id="${safeId}" data-add-title="${safeTitle}" data-add-type="${type}">
+                            ${selectedMods.has(m.project_id) ? 'ADDED ✅' : 'ADD TO GAME'}
+                        </button>
                     </div>
-                    <p style="font-size: 0.7rem; color: var(--text-dim); margin-top:5px;">${m.description.slice(0, 80)}...</p>
-                </div>
-                <button class="btn-secondary" style="margin-top: 8px; width:100%;" onclick="window.addItem('${m.project_id}', '${m.title}', '${type}')">
-                    ${selectedMods.has(m.project_id) ? 'ADDED ✅' : 'ADD TO GAME'}
-                </button>
-            </div>
-        `).join('');
+                `;
+            }).join('')
+            : '<div class="news-card" style="grid-column:1/-1;color:var(--text-dim);">No results. Try a different search.</div>';
     };
 
-    modInput.addEventListener('input', async (e) => {
-        if (e.target.value.length < 3) return;
-        const data = await ModrinthService.search(e.target.value, 'mod');
-        renderList(data, modList, 'mod');
-    });
+    const getSelectedModLoader = () => {
+        const active = document.querySelector('.loader-pill.active');
+        return (active && active.dataset.loader) || 'fabric';
+    };
 
-    document.getElementById('shader-search').addEventListener('input', async (e) => {
-        if (e.target.value.length < 3) return;
-        const data = await ModrinthService.search(e.target.value, 'shader');
-        renderList(data, shaderList, 'shader');
-    });
+    const runModrinthSearch = async (query, container, type, options = {}) => {
+        if (!container) return;
+        const q = (query || '').trim();
+        if (q.length < 2) {
+            container.innerHTML = '<div class="news-card" style="grid-column:1/-1;color:var(--text-dim);">Type at least 2 characters to search.</div>';
+            return;
+        }
+        container.innerHTML = '<div class="news-card" style="grid-column:1/-1;color:var(--text-dim);">Searching…</div>';
+        try {
+            const searchOptions = {};
+            if (type === 'mod') {
+                searchOptions.loader = options.loader ?? getSelectedModLoader();
+                const modVerEl = document.getElementById('mod-version-select');
+                if (modVerEl && modVerEl.value) searchOptions.gameVersion = modVerEl.value;
+            }
+            const data = await ModrinthService.search(q, type, searchOptions);
+            renderList(data, container, type);
+        } catch (err) {
+            console.error('Modrinth search failed:', err);
+            container.innerHTML = '<div class="news-card" style="grid-column:1/-1;color:#ff5555;">Search failed. Check connection and try again.</div>';
+        }
+    };
 
-    document.getElementById('pack-search').addEventListener('input', async (e) => {
-        if (e.target.value.length < 3) return;
-        const data = await ModrinthService.search(e.target.value, 'resourcepack');
-        renderList(data, packList, 'resourcepack');
-    });
+    const debounce = (fn, ms) => {
+        let t;
+        return (...args) => {
+            clearTimeout(t);
+            t = setTimeout(() => fn(...args), ms);
+        };
+    };
 
-    document.getElementById('world-search').addEventListener('input', async (e) => {
-        if (e.target.value.length < 3) return;
-        const data = await ModrinthService.search(e.target.value, 'world');
-        renderList(data, worldList, 'world');
+    const loaderPills = document.getElementById('loader-pills');
+    if (loaderPills) {
+        const savedLoader = localStorage.getItem(STORAGE_MOD_LOADER) || 'fabric';
+        loaderPills.querySelectorAll('.loader-pill').forEach((pill) => {
+            if (pill.dataset.loader === savedLoader) {
+                pill.classList.add('active');
+            } else {
+                pill.classList.remove('active');
+            }
+            pill.addEventListener('click', () => {
+                loaderPills.querySelectorAll('.loader-pill').forEach((p) => p.classList.remove('active'));
+                pill.classList.add('active');
+                localStorage.setItem(STORAGE_MOD_LOADER, pill.dataset.loader);
+                if (modInput.value.trim().length >= 2) modInput.dispatchEvent(new Event('input'));
+            });
+        });
+    }
+
+    const modVersionSelect = document.getElementById('mod-version-select');
+    if (modVersionSelect) {
+        modVersionSelect.addEventListener('change', () => {
+            if (modInput && modInput.value.trim().length >= 2) modInput.dispatchEvent(new Event('input'));
+        });
+    }
+
+    modInput.addEventListener('input', (e) => runModrinthSearch(e.target.value, modList, 'mod'));
+    document.getElementById('shader-search').addEventListener('input', (e) => runModrinthSearch(e.target.value, shaderList, 'shader'));
+    document.getElementById('pack-search').addEventListener('input', (e) => runModrinthSearch(e.target.value, packList, 'resourcepack', null));
+    document.getElementById('world-search').addEventListener('input', (e) => runModrinthSearch(e.target.value, worldList, 'world', null));
+
+    [modList, shaderList, packList, worldList].forEach(el => {
+        if (el) el.addEventListener('click', (e) => {
+            const btn = e.target.closest('[data-add-id]');
+            if (btn) window.addItem(btn.dataset.addId, btn.dataset.addTitle, btn.dataset.addType);
+        });
     });
 
     window.addItem = (id, title, type) => {
@@ -142,25 +228,33 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     proxyBtn.addEventListener('click', async () => {
         const ip = serverInput.value;
-        if (!ip) return;
+        if (!ip) {
+            proxyStatus.innerHTML = '<span style="color: #ff5555;">Enter a server address.</span>';
+            return;
+        }
         proxyBtn.disabled = true;
-        proxyStatus.innerHTML = `<span style="color: var(--accent-glow);">Proxying via Vercel Edge...</span>`;
+        proxyStatus.innerHTML = '<span style="color: var(--accent-glow);">Connecting…</span>';
         try {
-            const proxyUrl = await ProxyService.forwardServer(ip);
-            proxyStatus.innerHTML = `<span style="color: #4ade80;">Handshake Success! Tunneling to ${ip}</span>`;
-            setTimeout(() => document.getElementById('btn-play').click(), 1000);
+            await ProxyService.forwardServer(ip);
+            proxyStatus.innerHTML = '<span style="color: #4ade80;">Connected. Click PLAY NOW on Home to join.</span>';
+            setTimeout(() => document.getElementById('btn-play').click(), 800);
         } catch (e) {
-            proxyStatus.innerHTML = `<span style="color: #ff5555;">Proxy Error: ${e.message}</span>`;
+            proxyStatus.innerHTML = `<span style="color: #ff5555;">${escapeHtml(e.message)}</span>`;
         } finally {
             proxyBtn.disabled = false;
         }
     });
 
     window.connectServer = (ip) => {
-        serverInput.value = ip;
-        document.querySelector('[data-tab="multiplayer"]').click();
-        proxyBtn.click();
+        if (serverInput) serverInput.value = ip || '';
+        document.querySelector('[data-tab="multiplayer"]')?.click();
+        proxyBtn?.click();
     };
+
+    document.getElementById('featured-servers')?.addEventListener('click', (e) => {
+        const btn = e.target.closest('[data-connect]');
+        if (btn) window.connectServer(btn.dataset.connect);
+    });
 
     // Play Button Logic
     document.getElementById('btn-play').addEventListener('click', async () => {
@@ -171,36 +265,70 @@ document.addEventListener('DOMContentLoaded', async () => {
         await GameEngine.init({ version, offline: isOffline, username });
     });
 
-    // Auth Logic
+    // Auth: restore profile/username from storage
+    const displayNameEl = document.getElementById('display-name');
+    const statusEl = document.querySelector('.status');
+    const avatarEl = document.getElementById('user-avatar');
+    const profile = AuthService.getStoredProfile();
+    if (profile && profile.name) {
+        displayNameEl.textContent = profile.name;
+        if (profile.avatar) avatarEl.innerHTML = `<img src="${escapeHtml(profile.avatar)}" width="40" height="40" style="border-radius: 10px;" alt="">`;
+        if (statusEl) statusEl.textContent = 'Authenticated';
+    } else {
+        const storedUsername = AuthService.getStoredUsername();
+        displayNameEl.textContent = storedUsername;
+        if (offlineUsernameInput) offlineUsernameInput.value = storedUsername;
+    }
+
     document.getElementById('btn-ms-login').addEventListener('click', async () => {
         const user = await AuthService.login();
         if (user) {
-            document.getElementById('display-name').textContent = user.name;
-            document.getElementById('user-avatar').innerHTML = `<img src="${user.avatar}" width="40" height="40" style="border-radius: 10px;">`;
-            document.querySelector('.status').textContent = 'Authenticated';
+            displayNameEl.textContent = user.name;
+            avatarEl.innerHTML = user.avatar ? `<img src="${escapeHtml(user.avatar)}" width="40" height="40" style="border-radius: 10px;" alt="">` : '';
+            if (statusEl) statusEl.textContent = 'Authenticated';
+            AuthService.setStoredProfile({ name: user.name, avatar: user.avatar });
         }
     });
 
-    // Settings listeners
     if (memRange) {
         memRange.addEventListener('input', (e) => {
             memLabel.textContent = e.target.value + 'GB';
-            console.log(`Memory allocated: ${e.target.value}GB`);
         });
     }
 
-    // Offline Toggle logic
-    offlineToggle.addEventListener('change', (e) => {
-        if (e.target.checked) {
-            document.getElementById('display-name').textContent = 'WebcraftPlayer';
-            document.querySelector('.status').textContent = 'Offline Mode';
-            msBtn.disabled = true;
-            msBtn.style.opacity = '0.5';
-        } else {
-            msBtn.disabled = false;
-            msBtn.style.opacity = '1';
+    if (offlineToggle) {
+        offlineToggle.addEventListener('change', (e) => {
+            const isOffline = e.target.checked;
+            if (offlineUsernameWrap) offlineUsernameWrap.style.display = isOffline ? 'block' : 'none';
+            if (isOffline) {
+                const name = (offlineUsernameInput && offlineUsernameInput.value.trim()) || AuthService.getStoredUsername();
+                AuthService.setStoredUsername(name);
+                displayNameEl.textContent = name || 'WebcraftPlayer';
+                if (statusEl) statusEl.textContent = 'Offline';
+                if (msBtn) { msBtn.disabled = true; msBtn.style.opacity = '0.5'; }
+            } else {
+                if (msBtn) { msBtn.disabled = false; msBtn.style.opacity = '1'; }
+                const profile = AuthService.getStoredProfile();
+                if (profile && profile.name) {
+                    displayNameEl.textContent = profile.name;
+                    if (statusEl) statusEl.textContent = 'Authenticated';
+                } else {
+                    displayNameEl.textContent = AuthService.getStoredUsername();
+                    if (statusEl) statusEl.textContent = 'Guest';
+                }
+            }
+        });
+        const isOffline = offlineToggle.checked;
+        if (offlineUsernameWrap) offlineUsernameWrap.style.display = isOffline ? 'block' : 'none';
+    }
+
+    if (offlineUsernameInput) {
+        offlineUsernameInput.addEventListener('change', () => AuthService.setStoredUsername(offlineUsernameInput.value));
+        offlineUsernameInput.addEventListener('blur', () => AuthService.setStoredUsername(offlineUsernameInput.value));
+        if (offlineToggle && offlineToggle.checked) {
+            displayNameEl.textContent = offlineUsernameInput.value.trim() || AuthService.getStoredUsername();
         }
-    });
+    }
 
     // Copy Logs
     document.getElementById('btn-copy-logs').addEventListener('click', () => {

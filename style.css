@@ -290,11 +290,19 @@ nav {
 }
 
 /* Console Styles */
+.console-box,
 #game-console {
     margin-top: 15px;
     line-height: 1.5;
     border: 1px solid var(--glass-border);
     border-radius: 12px;
+    background: #000;
+    font-family: 'Courier New', monospace;
+    height: 350px;
+    overflow-y: auto;
+    color: #4ade80;
+    padding: 15px;
+    font-size: 0.8rem;
 }
 
 #game-console div {
@@ -335,6 +343,53 @@ nav {
 
 .search-bar input:focus {
     border-color: var(--accent-glow);
+}
+
+/* Mod filters: loader + game version */
+.mod-filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 20px;
+    align-items: flex-end;
+    margin-bottom: 16px;
+}
+.filter-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+.filter-label {
+    font-size: 0.85rem;
+    color: var(--text-dim);
+    font-weight: 600;
+}
+.loader-pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+.loader-pill {
+    padding: 8px 14px;
+    border-radius: 10px;
+    border: 1px solid var(--glass-border);
+    background: var(--glass-bg);
+    color: var(--text-dim);
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+.loader-pill:hover {
+    background: var(--glass-border);
+    color: var(--text-primary);
+}
+.loader-pill.active {
+    background: var(--accent-glow);
+    color: #121212;
+    border-color: var(--accent-glow);
+}
+.mod-version-select {
+    min-width: 140px;
 }
 
 /* Switch Toggle */

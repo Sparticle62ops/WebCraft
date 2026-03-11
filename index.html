@@ -7,7 +7,6 @@
     <title>Webcraft Launcher | Premium Web Minecraft Launcher</title>
     <link rel="stylesheet" href="style.css">
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
-    <script src="https://cjrtnc.leaningtech.com/3.0/loader.js"></script>
 </head>
 
 <body>
@@ -97,7 +96,7 @@
             <section id="tab-home" class="tab-content active">
                 <div class="hero">
                     <h2>Welcome to the Future of Browser Play</h2>
-                    <p>Experience Minecraft 1.20+ with full mod support, right in your browser.</p>
+                    <p>Play Minecraft 1.8 in the browser with Eaglercraft — singleplayer, multiplayer, and shared worlds.</p>
                     <div class="action-bar">
                         <button id="btn-play" class="btn-primary">PLAY NOW</button>
                         <select id="version-select" class="fancy-select">
@@ -107,12 +106,12 @@
                 </div>
                 <div class="news-grid">
                     <div class="news-card">
-                        <h3>Latest Update</h3>
-                        <p>CheerpJ 3.0 integration complete. Java 17 support enabled.</p>
+                        <h3>Eaglercraft 1.8</h3>
+                        <p>Play Minecraft 1.8 in the browser: singleplayer, multiplayer, and shared worlds.</p>
                     </div>
                     <div class="news-card">
-                        <h3>Modrinth Integration</h3>
-                        <p>Browse thousands of mods directly from the launcher.</p>
+                        <h3>Modrinth</h3>
+                        <p>Browse Fabric mods, shaders, resource packs, and worlds from the Mods tab.</p>
                     </div>
                 </div>
             </section>
@@ -129,8 +128,26 @@
 
             <section id="tab-mods" class="tab-content">
                 <h2>Browse Mods (Modrinth)</h2>
+                <div class="mod-filters">
+                    <div class="filter-row">
+                        <label class="filter-label">Loader</label>
+                        <div class="loader-pills" id="loader-pills" role="group" aria-label="Mod loader">
+                            <button type="button" class="loader-pill active" data-loader="fabric">Fabric</button>
+                            <button type="button" class="loader-pill" data-loader="forge">Forge</button>
+                            <button type="button" class="loader-pill" data-loader="quilt">Quilt</button>
+                            <button type="button" class="loader-pill" data-loader="neoforge">NeoForge</button>
+                            <button type="button" class="loader-pill" data-loader="any">Any</button>
+                        </div>
+                    </div>
+                    <div class="filter-row">
+                        <label class="filter-label">Game version</label>
+                        <select id="mod-version-select" class="fancy-select mod-version-select" aria-label="Filter mods by game version">
+                            <option value="">Any version</option>
+                        </select>
+                    </div>
+                </div>
                 <div class="search-bar">
-                    <input type="text" id="mod-search" placeholder="Search Fabric mods...">
+                    <input type="text" id="mod-search" placeholder="Search mods...">
                 </div>
                 <div id="mod-list" class="grid-list">
                     <!-- Dynamic Content -->
@@ -176,13 +193,18 @@
                     <div id="proxy-status" style="margin-top: 15px; font-size: 0.8rem; height: 20px;"></div>
                 </div>
 
-                <h3 style="margin-top: 30px;">Featured Servers</h3>
+                <h3 style="margin-top: 30px;">Featured Eaglercraft servers</h3>
+                <p style="color: var(--text-dim); font-size: 0.9rem; margin-top: 8px;">Connect to a server, then click PLAY NOW on Home to join.</p>
                 <div class="grid-list" id="featured-servers">
                     <div class="news-card">
                         <h4>Aarchon Craft</h4>
-                        <p style="font-size: 0.7rem; color: var(--text-dim);">The classic web-compatible experience.</p>
-                        <button class="btn-secondary" style="margin-top:10px; width:100%;"
-                            onclick="window.connectServer('eagler.aarchon.net')">CONNECT</button>
+                        <p style="font-size: 0.7rem; color: var(--text-dim);">Classic web-compatible server.</p>
+                        <button class="btn-secondary" style="margin-top:10px; width:100%;" type="button" data-connect="eagler.aarchon.net">CONNECT</button>
+                    </div>
+                    <div class="news-card">
+                        <h4>Direct connect</h4>
+                        <p style="font-size: 0.7rem; color: var(--text-dim);">Use the field above for any Eaglercraft server address.</p>
+                        <button class="btn-secondary" style="margin-top:10px; width:100%;" type="button" disabled>Enter IP above</button>
                     </div>
                 </div>
             </section>
@@ -192,11 +214,9 @@
                     <button class="btn-secondary" id="btn-copy-logs" style="padding: 6px 12px; font-size: 0.7rem;">COPY
                         LOGS</button>
                 </div>
-                <div class="news-card"
-                    style="background: #000; font-family: 'Courier New', monospace; height: 350px; overflow-y: auto; color: #4ade80; padding: 15px; font-size: 0.8rem;"
+                <div class="news-card console-box"
                     id="game-console">
-                    [System] Initializing Webcraft Console...
-                    [System] Awaiting launch...
+                    <div>[System] Webcraft console ready. Launch the game from Home to see output.</div>
                 </div>
             </section>
 
@@ -204,16 +224,20 @@
                 <h2>Settings</h2>
                 <div class="settings-group">
                     <h3>Authentication</h3>
-                    <div style="display: flex; gap: 10px; align-items: center; margin-bottom: 20px;">
+                    <div style="display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-bottom: 16px;">
                         <button class="btn-secondary" id="btn-ms-login">Sign in with Microsoft</button>
-                        <span>OR</span>
+                        <span style="color: var(--text-dim);">or use offline:</span>
                         <div style="display: flex; align-items: center; gap: 10px;">
                             <label class="switch">
                                 <input type="checkbox" id="offline-mode-toggle">
                                 <span class="slider"></span>
                             </label>
-                            <span>Offline Mode</span>
+                            <span>Offline mode</span>
                         </div>
+                    </div>
+                    <div id="offline-username-wrap" style="display: none; margin-top: 12px;">
+                        <label style="display: block; margin-bottom: 6px; color: var(--text-dim); font-size: 0.9rem;">Username (offline)</label>
+                        <input type="text" id="offline-username-input" placeholder="WebcraftPlayer" maxlength="16" class="search-bar" style="max-width: 240px;">
                     </div>
                 </div>
                 <div class="settings-group">

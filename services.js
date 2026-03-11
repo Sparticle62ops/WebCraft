@@ -1,68 +1,141 @@
+const STORAGE_KEYS = {
+    PROFILE: 'webcraft_profile',
+    SERVER: 'webcraft_server',
+    USERNAME: 'webcraft_username',
+};
+
 export const VersionService = {
     async getVersions() {
         const response = await fetch('https://launchermeta.mojang.com/mc/game/version_manifest_v2.json');
+        if (!response.ok) throw new Error('Failed to fetch version manifest');
         const data = await response.json();
-        return data.versions;
+        return data.versions || [];
     },
     async getVersionDetails(versionId) {
         const manifest = await this.getVersions();
-        const version = manifest.find(v => v.id === versionId);
-        if (!version) throw new Error("Version not found");
-
+        const version = manifest.find((v) => v.id === versionId);
+        if (!version) throw new Error('Version not found');
         const response = await fetch(version.url);
+        if (!response.ok) throw new Error('Failed to fetch version details');
         return await response.json();
     },
-    async downloadToVFS(url, path) {
-        console.log(`Downloading ${url} to ${path}...`);
-        const response = await fetch(url);
-        const buffer = await response.arrayBuffer();
-
-        // CheerpJ 3.0 uses a /str/ prefix for URL-based mounting or 
-        // we can use the File API if integrated. 
-        // For this launcher, we assume CheerpJ is initialized and we can write to /app/
-        if (window.cheerpjAddStringFile) {
-            // Mocking the write for now as real CheerpJ fs ops are specific
-            // In CheerpJ 3.0, you often mount URLs directly.
-        }
-        return buffer;
-    }
 };
+
+/** Modrinth loaders (categories). Used in search facets. */
+export const MODRINTH_LOADERS = [
+    { id: 'any', label: 'Any loader', category: null },
+    { id: 'fabric', label: 'Fabric', category: 'fabric' },
+    { id: 'forge', label: 'Forge', category: 'forge' },
+    { id: 'quilt', label: 'Quilt', category: 'quilt' },
+    { id: 'neoforge', label: 'NeoForge', category: 'neoforge' },
+];
 
 export const ModrinthService = {
-    async search(query, projectType = 'mod') {
-        const facets = projectType === 'mod' ? '[["categories:fabric"],["project_type:mod"]]' : `[["project_type:${projectType}"]]`;
-        const url = `https://api.modrinth.com/v2/search?query=${encodeURIComponent(query)}&facets=${facets}`;
+    /**
+     * @param {string} query - Search query
+     * @param {string} projectType - mod | shader | resourcepack | world
+     * @param {{ loader?: string, gameVersion?: string }} options - loader: fabric|forge|quilt|neoforge|any; gameVersion: e.g. 1.20.1
+     */
+    async search(query, projectType = 'mod', options = {}) {
+        const parts = [];
+        if (projectType === 'mod') {
+            parts.push('["project_type:mod"]');
+            const loader = (options.loader || 'fabric').toLowerCase();
+            if (loader && loader !== 'any') parts.push(`["categories:${loader}"]`);
+            if (options.gameVersion) parts.push(`["versions:${options.gameVersion}"]`);
+        } else {
+            parts.push(`["project_type:${projectType}"]`);
+            if (options.gameVersion) parts.push(`["versions:${options.gameVersion}"]`);
+        }
+        const facetsParam = '[' + parts.join(',') + ']';
+        const url = `https://api.modrinth.com/v2/search?query=${encodeURIComponent(query)}&facets=${encodeURIComponent(facetsParam)}`;
         const response = await fetch(url);
+        if (!response.ok) throw new Error('Modrinth search failed');
         const data = await response.json();
-        return data.hits;
-    }
+        return data.hits || [];
+    },
 };
 
+/**
+ * Normalizes a server address to a WebSocket URL for Eaglercraft-compatible servers.
+ * Saves to sessionStorage for the game iframe.
+ */
 export const ProxyService = {
-    /**
-     * Encapulates the logic for server forwarding.
-     * In a Vercel environment, this would hit an API route that proxies TCP/UDP via WebSockets.
-     */
     async forwardServer(ip) {
-        console.log(`Forwarding connection to: ${ip} via Webcraft Proxy...`);
-        // For demonstration, we simulate the proxy handshake
-        return new Promise(resolve => setTimeout(() => resolve(`wss://webcraft-proxy.vercel.app/connect?target=${ip}`), 1500));
-    }
+        const trimmed = (ip || '').trim();
+        if (!trimmed) throw new Error('Enter a server address');
+        let wsUrl = trimmed;
+        if (!/^wss?:\/\//i.test(wsUrl)) {
+            wsUrl = (trimmed.startsWith('localhost') || /^\d+\.\d+\.\d+\.\d+$/.test(trimmed) ? 'ws://' : 'wss://') + trimmed;
+        }
+        try {
+            new URL(wsUrl);
+        } catch {
+            throw new Error('Invalid server address');
+        }
+        sessionStorage.setItem(STORAGE_KEYS.SERVER, wsUrl);
+        return wsUrl;
+    },
+    getStoredServer() {
+        return sessionStorage.getItem(STORAGE_KEYS.SERVER) || '';
+    },
 };
 
 export const AuthService = {
+    getStoredProfile() {
+        try {
+            const raw = localStorage.getItem(STORAGE_KEYS.PROFILE);
+            return raw ? JSON.parse(raw) : null;
+        } catch {
+            return null;
+        }
+    },
+    setStoredProfile(profile) {
+        try {
+            if (profile) localStorage.setItem(STORAGE_KEYS.PROFILE, JSON.stringify(profile));
+            else localStorage.removeItem(STORAGE_KEYS.PROFILE);
+        } catch (e) {
+            console.warn('Could not save profile', e);
+        }
+    },
+    getStoredUsername() {
+        return localStorage.getItem(STORAGE_KEYS.USERNAME) || 'WebcraftPlayer';
+    },
+    setStoredUsername(name) {
+        try {
+            localStorage.setItem(STORAGE_KEYS.USERNAME, (name || 'WebcraftPlayer').trim() || 'WebcraftPlayer');
+        } catch (e) {
+            console.warn('Could not save username', e);
+        }
+    },
+    /**
+     * Microsoft OAuth: redirects to our API which then redirects to Microsoft.
+     * Requires Vercel env: MICROSOFT_CLIENT_ID, MICROSOFT_CLIENT_SECRET, NEXTAUTH_URL (or VERCEL_URL).
+     */
     async login() {
-        // In a real implementation, this would trigger the Microsoft OAuth2 flow.
-        // For this demo, we'll simulate a successful login after a short delay.
-        return new Promise((resolve) => {
-            console.log("Initiating Microsoft OAuth2 Flow...");
-            setTimeout(() => {
-                resolve({
-                    name: "Steve",
-                    avatar: "https://minotar.net/avatar/Steve/40.png",
-                    token: "mock_msa_token_123"
-                });
-            }, 1000);
-        });
-    }
+        const apiBase = typeof window !== 'undefined' && window.location.origin;
+        const loginUrl = `${apiBase}/api/auth/login`;
+        try {
+            const res = await fetch(loginUrl, { redirect: 'manual' });
+            if (res.type === 'opaqueredirect' || res.status === 302) {
+                const url = res.headers.get('Location');
+                if (url) {
+                    window.location.href = url;
+                    return null;
+                }
+            }
+            const data = await res.json().catch(() => ({}));
+            if (data.redirect) {
+                window.location.href = data.redirect;
+                return null;
+            }
+            if (data.error) throw new Error(data.error);
+        } catch (e) {
+            if (e.message && e.message.includes('redirect')) return null;
+            console.warn('Microsoft login not configured or failed:', e.message);
+            window.open('https://login.live.com/', '_blank', 'noopener');
+            return null;
+        }
+        return null;
+    },
 };

@@ -1,42 +1,66 @@
-# Eagler-Next: Modern Web Minecraft Launcher
+# Webcraft Launcher
 
-A premium, web-based Minecraft launcher targeting 1.20+ with support for loading Fabric mods via CheerpJ 3.0.
+A **deployment-ready**, web-based Minecraft launcher that runs [Eaglercraft](https://dev.eaglercraft.com) 1.8 in the browser — singleplayer, multiplayer, and shared worlds. Built for [Vercel](https://vercel.com).
 
 ## Features
-- **Modern UI**: Glassmorphism design with smooth animations.
-- **Universal Versions**: Play any version from 1.7.2 to 1.21+.
-- **Modrinth Integration**: Browse and add Fabric mods directly.
-- **Official Auth**: Secure Microsoft Account login.
-- **Offline Mode**: Optional "Cracked" mode (hidden in settings).
 
-## How to Host (Vercel)
-1. Fork or download this directory.
-2. Push to GitHub.
-3. Import to [Vercel](https://vercel.com).
-4. Done! It works as a static site.
+- **Play in browser**: Full Eaglercraft 1.8 client (singleplayer, multiplayer, shared worlds).
+- **Mojang versions**: Browse and select game versions from the official manifest.
+- **Modrinth**: Search and add Fabric mods, shaders, resource packs, and worlds.
+- **Multiplayer**: Connect to Eaglercraft-compatible servers; address is passed into the game when you hit PLAY.
+- **Offline mode**: Custom username stored in `localStorage`; no account required.
+- **Microsoft login**: Optional; configure OAuth in Vercel for full account support.
 
-## Quick Test (Local)
-To test the launcher immediately on your machine:
-1.  Open a terminal in this directory.
-2.  Run `npm install && npm start`.
-3.  Open `http://localhost:3000` (or whichever port is shown).
+## Deploy to Vercel
 
-Alternatively, if you have **Python** installed:
-`python -m http.server 8000`
+1. **Fork or clone** this repo and push to GitHub.
+2. In [Vercel](https://vercel.com), **Import** the repository.
+3. **Deploy** — no build step; it’s static files + optional API routes.
+4. Optional: add **Environment variables** for Microsoft auth:
+   - `MICROSOFT_CLIENT_ID`
+   - `MICROSOFT_CLIENT_SECRET`
+   - (Redirect URI will be `https://<your-domain>/api/auth/callback`.)
 
-## How to Use
-1. **Launch**: Open the hosted URL.
-2. **Auth**: Go to **Settings** and toggle **Offline Mode** (fastest for testing) or click "Sign in with Microsoft".
-3. **Select Version**: Go to the **Versions** tab and hit **SELECT** on a version.
-4. **Mods**: Search and add mods in the **Mods** tab.
-5. **Play**: Hit **PLAY NOW** on the Home screen and watch the **Console** tab for logs.
+## Local development
 
-> [!NOTE]
-> The launcher initializes the **CheerpJ 3.0** engine. To run the game, the launcher dynamically mounts the selected official Minecraft JARs into the browser's virtual memory.
+```bash
+npm install
+npm run dev
+```
 
-## Development
-This project uses:
-- **HTML5/CSS3** (Vanilla)
-- **Javascript** (ES6 Modules)
-- **CheerpJ 3.0** (Wasm-based JVM)
-- **Modrinth API** & **Mojang API**
+Then open **http://localhost:3000**.  
+Without npm you can use any static server, e.g. `npx serve . -l 3000` or `python -m http.server 8000`.
+
+## How to use
+
+1. **Launch**: Open the deployed or local URL.
+2. **Auth**: In **Settings**, turn on **Offline mode** and set a username (saved in browser), or use **Sign in with Microsoft** if configured.
+3. **Versions**: Use the **Versions** tab to pick a version (used for launcher metadata; the game runs Eaglercraft 1.8).
+4. **Mods / Shaders / Packs / Worlds**: Search in the respective tabs; results come from Modrinth.
+5. **Multiplayer**: In **Servers**, enter an Eaglercraft server address (e.g. `eagler.aarchon.net` or `wss://...`), click **PROXY & PLAY**, then **PLAY NOW** on Home. The game loads with that server.
+6. **Play**: Click **PLAY NOW** on Home. The game runs in-page; use **Exit game** to return to the launcher.
+
+## Tech stack
+
+- **Frontend**: Vanilla HTML/CSS/JS (ES modules), no framework.
+- **APIs**: Mojang version manifest, Modrinth search.
+- **Game**: Eaglercraft 1.8 via iframe to official client; `play.html` forwards optional `?server=` to it.
+- **Hosting**: Vercel (static + optional `/api/auth/login` for Microsoft OAuth).
+
+## Project structure
+
+```
+├── index.html      # Launcher UI
+├── main.js         # Tabs, versions, Modrinth, auth, play
+├── style.css       # Layout and theme
+├── services.js     # Version, Modrinth, Proxy, Auth
+├── engine.js       # Game launch (iframe to play.html)
+├── play.html       # Wrapper that loads Eaglercraft with optional server param
+├── vercel.json     # Clean URLs, COOP header
+├── api/auth/       # Optional Microsoft OAuth (login.js)
+└── README.md
+```
+
+## License
+
+Use and modify as you like. Eaglercraft is a separate project; see [dev.eaglercraft.com](https://dev.eaglercraft.com) for its terms and credits.
