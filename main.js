@@ -61,10 +61,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     try {
         const versions = await VersionService.getVersions();
         const releases = (versions || []).filter(v => v.type === 'release');
-        if (versionSelect) {
+        if (versionSelect && releases.length) {
             versionSelect.innerHTML = releases.slice(0, 20).map(v =>
-                `<option value="${v.id}">${v.id}</option>`
+                `<option value="${escapeHtml(v.id)}">${escapeHtml(v.id)}</option>`
             ).join('');
+            if (!versionSelect.value) versionSelect.selectedIndex = 0;
         }
         if (versionList) {
             const list = (versions || []).slice(0, 40);
@@ -85,8 +86,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     } catch (e) {
         console.error('Failed to load versions:', e);
-        if (versionSelect) versionSelect.innerHTML = '<option value="1.8.9">1.8.9 (fallback)</option>';
-        if (versionList) versionList.innerHTML = '<div class="news-card" style="grid-column:1/-1;color:#ff5555;">Failed to load versions. Check connection.</div>';
+        if (versionSelect) {
+            versionSelect.innerHTML = '<option value="1.8.9">1.8.9</option><option value="1.20.1">1.20.1</option>';
+            versionSelect.selectedIndex = 0;
+        }
+        if (versionList) versionList.innerHTML = '<div class="news-card" style="grid-column:1/-1;color:#ff5555;">Failed to load versions. Check connection and refresh.</div>';
+        const modVerSelect = document.getElementById('mod-version-select');
+        if (modVerSelect) modVerSelect.innerHTML = '<option value="">Any version</option><option value="1.20.1">1.20.1</option><option value="1.8.9">1.8.9</option>';
     }
 
     // Version list: delegate SELECT clicks and search
@@ -202,10 +208,22 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     }
 
-    modInput.addEventListener('input', (e) => runModrinthSearch(e.target.value, modList, 'mod'));
-    document.getElementById('shader-search').addEventListener('input', (e) => runModrinthSearch(e.target.value, shaderList, 'shader'));
-    document.getElementById('pack-search').addEventListener('input', (e) => runModrinthSearch(e.target.value, packList, 'resourcepack', null));
-    document.getElementById('world-search').addEventListener('input', (e) => runModrinthSearch(e.target.value, worldList, 'world', null));
+    const debounceMs = 320;
+    const debouncedModSearch = (function () {
+        let t;
+        return (value, container, type) => {
+            clearTimeout(t);
+            t = setTimeout(() => runModrinthSearch(value, container, type), debounceMs);
+        };
+    })();
+
+    if (modInput) modInput.addEventListener('input', (e) => debouncedModSearch(e.target.value, modList, 'mod'));
+    const shaderSearch = document.getElementById('shader-search');
+    if (shaderSearch) shaderSearch.addEventListener('input', (e) => debouncedModSearch(e.target.value, shaderList, 'shader'));
+    const packSearch = document.getElementById('pack-search');
+    if (packSearch) packSearch.addEventListener('input', (e) => debouncedModSearch(e.target.value, packList, 'resourcepack'));
+    const worldSearch = document.getElementById('world-search');
+    if (worldSearch) worldSearch.addEventListener('input', (e) => debouncedModSearch(e.target.value, worldList, 'world'));
 
     [modList, shaderList, packList, worldList].forEach(el => {
         if (el) el.addEventListener('click', (e) => {
@@ -215,10 +233,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 
     window.addItem = (id, title, type) => {
+        if (!id) return;
         selectedMods.add(id);
         console.log(`Added ${type}: ${title}`);
         const inputId = type === 'mod' ? 'mod-search' : (type === 'resourcepack' ? 'pack-search' : `${type}-search`);
-        document.getElementById(inputId).dispatchEvent(new Event('input'));
+        const inputEl = document.getElementById(inputId);
+        if (inputEl && inputEl.value.trim().length >= 2) inputEl.dispatchEvent(new Event('input'));
     };
 
     // Multiplayer / Proxy Logic
@@ -257,13 +277,17 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 
     // Play Button Logic
-    document.getElementById('btn-play').addEventListener('click', async () => {
-        const version = versionSelect.value;
-        const isOffline = offlineToggle.checked;
-        const username = document.getElementById('display-name').textContent;
-        console.log(`Launching ${version} for ${username} (Offline: ${isOffline})`);
-        await GameEngine.init({ version, offline: isOffline, username });
-    });
+    const btnPlay = document.getElementById('btn-play');
+    if (btnPlay) {
+        btnPlay.addEventListener('click', async () => {
+            const version = (versionSelect && versionSelect.value) || (versionSelect && versionSelect.options?.[0]?.value) || '1.8.9';
+            const isOffline = offlineToggle ? offlineToggle.checked : true;
+            const displayName = document.getElementById('display-name');
+            const username = displayName ? displayName.textContent : 'WebcraftPlayer';
+            console.log(`Launching ${version} for ${username} (Offline: ${isOffline})`);
+            await GameEngine.init({ version, offline: isOffline, username });
+        });
+    }
 
     // Auth: restore profile/username from storage
     const displayNameEl = document.getElementById('display-name');
@@ -320,6 +344,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
         const isOffline = offlineToggle.checked;
         if (offlineUsernameWrap) offlineUsernameWrap.style.display = isOffline ? 'block' : 'none';
+        if (isOffline && msBtn) { msBtn.disabled = true; msBtn.style.opacity = '0.5'; }
     }
 
     if (offlineUsernameInput) {
@@ -331,11 +356,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     // Copy Logs
-    document.getElementById('btn-copy-logs').addEventListener('click', () => {
-        const text = consoleEl.innerText;
-        navigator.clipboard.writeText(text);
-        const btn = document.getElementById('btn-copy-logs');
-        btn.textContent = 'COPIED!';
-        setTimeout(() => btn.textContent = 'COPY LOGS', 2000);
-    });
+    const btnCopyLogs = document.getElementById('btn-copy-logs');
+    if (btnCopyLogs && consoleEl) {
+        btnCopyLogs.addEventListener('click', () => {
+            const text = consoleEl.innerText || '';
+            navigator.clipboard.writeText(text).then(() => {
+                btnCopyLogs.textContent = 'COPIED!';
+                setTimeout(() => { btnCopyLogs.textContent = 'COPY LOGS'; }, 2000);
+            }).catch(() => {});
+        });
+    }
 });
