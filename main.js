@@ -2,6 +2,7 @@ import { VersionService, ModrinthService, AuthService, ProxyService } from './se
 import { GameEngine } from './engine.js';
 
 const STORAGE_MOD_LOADER = 'webcraft_mod_loader';
+const STORAGE_LAST_PLAYED_AT = 'webcraft_last_played_at';
 
 function escapeHtml(s) {
     if (s == null) return '';
@@ -16,7 +17,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     const consoleEl = document.getElementById('game-console');
     const selectedMods = new Set();
 
-    // Hook console
     const oldLog = console.log;
     console.log = function (...args) {
         oldLog.apply(console, args);
@@ -28,7 +28,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     };
 
-    // Tab switching
     tabs.forEach(tab => {
         tab.addEventListener('click', () => {
             const target = tab.dataset.tab;
@@ -48,14 +47,28 @@ document.addEventListener('DOMContentLoaded', async () => {
     const offlineToggle = document.getElementById('offline-mode-toggle');
     const offlineUsernameWrap = document.getElementById('offline-username-wrap');
     const offlineUsernameInput = document.getElementById('offline-username-input');
+    const activeServerLabel = document.getElementById('active-server-label');
+    const lastPlayedLabel = document.getElementById('last-played-label');
 
-    // Initialize Services
-    window.selectVersion = (id) => {
-        if (versionSelect) versionSelect.value = id;
-        document.querySelector('[data-tab="home"]').click();
+    const refreshLaunchMeta = () => {
+        const server = ProxyService.getStoredServer();
+        if (activeServerLabel) activeServerLabel.textContent = `Server: ${server || 'None'}`;
+        const lastPlayed = localStorage.getItem(STORAGE_LAST_PLAYED_AT);
+        if (lastPlayedLabel) {
+            if (!lastPlayed) {
+                lastPlayedLabel.textContent = 'Last played: never';
+            } else {
+                const date = new Date(lastPlayed);
+                lastPlayedLabel.textContent = `Last played: ${isNaN(date.getTime()) ? 'unknown' : date.toLocaleString()}`;
+            }
+        }
     };
 
-    // Version list: single load path with Retry
+    window.selectVersion = (id) => {
+        if (versionSelect) versionSelect.value = id;
+        document.querySelector('[data-tab="home"]')?.click();
+    };
+
     function doVersionLoad() {
         if (versionList) versionList.innerHTML = '<div class="news-card" style="grid-column:1/-1;color:var(--text-dim);">Loading versions…</div>';
         if (versionSelect) versionSelect.innerHTML = '<option value="">Loading…</option>';
@@ -107,13 +120,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
     doVersionLoad();
 
-    // Version list: delegate SELECT clicks and search
     if (versionList) {
         versionList.addEventListener('click', (e) => {
             const btn = e.target.closest('[data-select-version]');
             if (btn) window.selectVersion(btn.dataset.selectVersion);
         });
     }
+
     const versionSearchInput = document.querySelector('#tab-versions .search-bar input');
     if (versionSearchInput && versionList) {
         versionSearchInput.addEventListener('input', () => {
@@ -126,7 +139,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     }
 
-    // Mod Search
     const modInput = document.getElementById('mod-search');
     const modList = document.getElementById('mod-list');
     const shaderList = document.getElementById('shader-list');
@@ -139,7 +151,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         container.innerHTML = list.length
             ? list.map(m => {
                 const desc = (m.description || '').slice(0, 80);
-                const safeTitle = escapeHtml(m.title || '');
+                const safeTitle = escapeHtml(m.title || 'Unknown');
                 const safeId = escapeHtml(m.project_id || '');
                 return `
                     <div class="mod-card news-card" style="display: flex; flex-direction: column; justify-content: space-between;">
@@ -164,7 +176,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         return (active && active.dataset.loader) || 'fabric';
     };
 
-    const runModrinthSearch = async (query, container, type, options = {}) => {
+    const runModrinthSearch = async (query, container, type) => {
         if (!container) return;
         const q = (query || '').trim();
         if (q.length < 2) {
@@ -175,7 +187,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         try {
             const searchOptions = {};
             if (type === 'mod') {
-                searchOptions.loader = options.loader ?? getSelectedModLoader();
+                searchOptions.loader = getSelectedModLoader();
                 const modVerEl = document.getElementById('mod-version-select');
                 if (modVerEl && modVerEl.value) searchOptions.gameVersion = modVerEl.value;
             }
@@ -187,28 +199,17 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     };
 
-    const debounce = (fn, ms) => {
-        let t;
-        return (...args) => {
-            clearTimeout(t);
-            t = setTimeout(() => fn(...args), ms);
-        };
-    };
-
     const loaderPills = document.getElementById('loader-pills');
     if (loaderPills) {
         const savedLoader = localStorage.getItem(STORAGE_MOD_LOADER) || 'fabric';
         loaderPills.querySelectorAll('.loader-pill').forEach((pill) => {
-            if (pill.dataset.loader === savedLoader) {
-                pill.classList.add('active');
-            } else {
-                pill.classList.remove('active');
-            }
+            if (pill.dataset.loader === savedLoader) pill.classList.add('active');
+            else pill.classList.remove('active');
             pill.addEventListener('click', () => {
                 loaderPills.querySelectorAll('.loader-pill').forEach((p) => p.classList.remove('active'));
                 pill.classList.add('active');
                 localStorage.setItem(STORAGE_MOD_LOADER, pill.dataset.loader);
-                if (modInput.value.trim().length >= 2) modInput.dispatchEvent(new Event('input'));
+                if (modInput && modInput.value.trim().length >= 2) modInput.dispatchEvent(new Event('input'));
             });
         });
     }
@@ -221,7 +222,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     const debounceMs = 320;
-    const debouncedModSearch = (function () {
+    const debouncedModSearch = (() => {
         let t;
         return (value, container, type) => {
             clearTimeout(t);
@@ -238,7 +239,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (worldSearch) worldSearch.addEventListener('input', (e) => debouncedModSearch(e.target.value, worldList, 'world'));
 
     [modList, shaderList, packList, worldList].forEach(el => {
-        if (el) el.addEventListener('click', (e) => {
+        if (!el) return;
+        el.addEventListener('click', (e) => {
             const btn = e.target.closest('[data-add-id]');
             if (btn) window.addItem(btn.dataset.addId, btn.dataset.addTitle, btn.dataset.addType);
         });
@@ -253,13 +255,20 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (inputEl && inputEl.value.trim().length >= 2) inputEl.dispatchEvent(new Event('input'));
     };
 
-    // Multiplayer / Proxy Logic
     const proxyBtn = document.getElementById('btn-connect-proxy');
     const proxyStatus = document.getElementById('proxy-status');
     const serverInput = document.getElementById('server-ip');
+    const clearProxyBtn = document.getElementById('btn-clear-proxy');
 
-    proxyBtn.addEventListener('click', async () => {
-        const ip = serverInput.value;
+    if (serverInput) {
+        serverInput.value = ProxyService.getStoredServer();
+        serverInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') proxyBtn?.click();
+        });
+    }
+
+    proxyBtn?.addEventListener('click', async () => {
+        const ip = serverInput ? serverInput.value : '';
         if (!ip) {
             proxyStatus.innerHTML = '<span style="color: #ff5555;">Enter a server address.</span>';
             return;
@@ -267,14 +276,23 @@ document.addEventListener('DOMContentLoaded', async () => {
         proxyBtn.disabled = true;
         proxyStatus.innerHTML = '<span style="color: var(--accent-glow);">Connecting…</span>';
         try {
-            await ProxyService.forwardServer(ip);
+            const wsUrl = await ProxyService.forwardServer(ip);
+            if (serverInput) serverInput.value = wsUrl;
             proxyStatus.innerHTML = '<span style="color: #4ade80;">Connected. Click PLAY NOW on Home to join.</span>';
-            setTimeout(() => document.getElementById('btn-play').click(), 800);
+            refreshLaunchMeta();
+            setTimeout(() => document.getElementById('btn-play')?.click(), 800);
         } catch (e) {
             proxyStatus.innerHTML = `<span style="color: #ff5555;">${escapeHtml(e.message)}</span>`;
         } finally {
             proxyBtn.disabled = false;
         }
+    });
+
+    clearProxyBtn?.addEventListener('click', () => {
+        ProxyService.clearStoredServer();
+        if (serverInput) serverInput.value = '';
+        if (proxyStatus) proxyStatus.innerHTML = '<span style="color: var(--text-dim);">Server cleared. Launching will open default game menu.</span>';
+        refreshLaunchMeta();
     });
 
     window.connectServer = (ip) => {
@@ -288,7 +306,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (btn) window.connectServer(btn.dataset.connect);
     });
 
-    // Play Button Logic
     const btnPlay = document.getElementById('btn-play');
     if (btnPlay) {
         btnPlay.addEventListener('click', async () => {
@@ -297,11 +314,20 @@ document.addEventListener('DOMContentLoaded', async () => {
             const displayName = document.getElementById('display-name');
             const username = displayName ? displayName.textContent : 'WebcraftPlayer';
             console.log(`Launching ${version} for ${username} (Offline: ${isOffline})`);
+            localStorage.setItem(STORAGE_LAST_PLAYED_AT, new Date().toISOString());
+            refreshLaunchMeta();
             await GameEngine.init({ version, offline: isOffline, username });
         });
     }
 
-    // Auth: restore profile/username from storage
+    document.addEventListener('keydown', (e) => {
+        if (e.repeat || (e.target && ['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName))) return;
+        if (e.key.toLowerCase() === 'p') {
+            e.preventDefault();
+            document.getElementById('btn-play')?.click();
+        }
+    });
+
     const displayNameEl = document.getElementById('display-name');
     const statusEl = document.querySelector('.status');
     const avatarEl = document.getElementById('user-avatar');
@@ -338,7 +364,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     if (memRange) {
         memRange.addEventListener('input', (e) => {
-            memLabel.textContent = e.target.value + 'GB';
+            memLabel.textContent = `${e.target.value}GB`;
         });
     }
 
@@ -354,9 +380,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                 if (msBtn) { msBtn.disabled = true; msBtn.style.opacity = '0.5'; }
             } else {
                 if (msBtn) { msBtn.disabled = false; msBtn.style.opacity = '1'; }
-                const profile = AuthService.getStoredProfile();
-                if (profile && profile.name) {
-                    displayNameEl.textContent = profile.name;
+                const savedProfile = AuthService.getStoredProfile();
+                if (savedProfile && savedProfile.name) {
+                    displayNameEl.textContent = savedProfile.name;
                     if (statusEl) statusEl.textContent = 'Authenticated';
                 } else {
                     displayNameEl.textContent = AuthService.getStoredUsername();
@@ -370,22 +396,32 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     if (offlineUsernameInput) {
-        offlineUsernameInput.addEventListener('change', () => AuthService.setStoredUsername(offlineUsernameInput.value));
-        offlineUsernameInput.addEventListener('blur', () => AuthService.setStoredUsername(offlineUsernameInput.value));
+        const syncName = () => {
+            const value = offlineUsernameInput.value;
+            AuthService.setStoredUsername(value);
+            if (offlineToggle?.checked) displayNameEl.textContent = value.trim() || 'WebcraftPlayer';
+        };
+        offlineUsernameInput.addEventListener('input', syncName);
+        offlineUsernameInput.addEventListener('change', syncName);
+        offlineUsernameInput.addEventListener('blur', syncName);
         if (offlineToggle && offlineToggle.checked) {
             displayNameEl.textContent = offlineUsernameInput.value.trim() || AuthService.getStoredUsername();
         }
     }
 
-    // Copy Logs
     const btnCopyLogs = document.getElementById('btn-copy-logs');
     if (btnCopyLogs && consoleEl) {
-        btnCopyLogs.addEventListener('click', () => {
+        btnCopyLogs.addEventListener('click', async () => {
             const text = consoleEl.innerText || '';
-            navigator.clipboard.writeText(text).then(() => {
+            try {
+                await navigator.clipboard.writeText(text);
                 btnCopyLogs.textContent = 'COPIED!';
-                setTimeout(() => { btnCopyLogs.textContent = 'COPY LOGS'; }, 2000);
-            }).catch(() => {});
+            } catch {
+                btnCopyLogs.textContent = 'COPY FAILED';
+            }
+            setTimeout(() => { btnCopyLogs.textContent = 'COPY LOGS'; }, 2000);
         });
     }
+
+    refreshLaunchMeta();
 });
