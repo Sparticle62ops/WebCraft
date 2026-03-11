@@ -4,10 +4,25 @@ const STORAGE_KEYS = {
     USERNAME: 'webcraft_username',
 };
 
+const MOJANG_MANIFEST_URL = 'https://launchermeta.mojang.com/mc/game/version_manifest_v2.json';
+
+/** Tries direct fetch, then CORS proxy so it works from file:// and strict networks. */
+async function fetchWithCorsFallback(url) {
+    try {
+        const r = await fetch(url, { mode: 'cors' });
+        if (r.ok) return r;
+        throw new Error(r.statusText || 'Request failed');
+    } catch (err) {
+        const proxyUrl = 'https://corsproxy.io/?url=' + encodeURIComponent(url);
+        const r = await fetch(proxyUrl);
+        if (!r.ok) throw new Error('Connection failed. Run the app from a local server: npx serve . -l 3000');
+        return r;
+    }
+}
+
 export const VersionService = {
     async getVersions() {
-        const response = await fetch('https://launchermeta.mojang.com/mc/game/version_manifest_v2.json');
-        if (!response.ok) throw new Error('Failed to fetch version manifest');
+        const response = await fetchWithCorsFallback(MOJANG_MANIFEST_URL);
         const data = await response.json();
         return data.versions || [];
     },
@@ -15,8 +30,7 @@ export const VersionService = {
         const manifest = await this.getVersions();
         const version = manifest.find((v) => v.id === versionId);
         if (!version) throw new Error('Version not found');
-        const response = await fetch(version.url);
-        if (!response.ok) throw new Error('Failed to fetch version details');
+        const response = await fetchWithCorsFallback(version.url);
         return await response.json();
     },
 };
@@ -49,8 +63,7 @@ export const ModrinthService = {
         }
         const facetsParam = '[' + parts.join(',') + ']';
         const url = `https://api.modrinth.com/v2/search?query=${encodeURIComponent(query)}&facets=${encodeURIComponent(facetsParam)}`;
-        const response = await fetch(url);
-        if (!response.ok) throw new Error('Modrinth search failed');
+        const response = await fetchWithCorsFallback(url);
         const data = await response.json();
         return data.hits || [];
     },
@@ -109,8 +122,8 @@ export const AuthService = {
         }
     },
     /**
-     * Microsoft OAuth: redirects to our API which then redirects to Microsoft.
-     * Requires Vercel env: MICROSOFT_CLIENT_ID, MICROSOFT_CLIENT_SECRET, NEXTAUTH_URL (or VERCEL_URL).
+     * Microsoft OAuth: only works when server has MICROSOFT_CLIENT_ID etc. configured.
+     * Otherwise returns { configured: false } so the UI can show "Use Offline mode" instead of opening a wrong page.
      */
     async login() {
         const apiBase = typeof window !== 'undefined' && window.location.origin;
@@ -119,23 +132,20 @@ export const AuthService = {
             const res = await fetch(loginUrl, { redirect: 'manual' });
             if (res.type === 'opaqueredirect' || res.status === 302) {
                 const url = res.headers.get('Location');
-                if (url) {
+                if (url && url.startsWith('https://login.microsoftonline.com')) {
                     window.location.href = url;
                     return null;
                 }
             }
             const data = await res.json().catch(() => ({}));
-            if (data.redirect) {
+            if (data.redirect && data.redirect.startsWith('https://login.microsoftonline.com')) {
                 window.location.href = data.redirect;
                 return null;
             }
-            if (data.error) throw new Error(data.error);
+            if (data.error) return { configured: false, error: data.error };
         } catch (e) {
-            if (e.message && e.message.includes('redirect')) return null;
-            console.warn('Microsoft login not configured or failed:', e.message);
-            window.open('https://login.live.com/', '_blank', 'noopener');
-            return null;
+            return { configured: false, error: 'Not configured' };
         }
-        return null;
+        return { configured: false };
     },
 };

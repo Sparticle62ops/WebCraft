@@ -55,45 +55,57 @@ document.addEventListener('DOMContentLoaded', async () => {
         document.querySelector('[data-tab="home"]').click();
     };
 
-    // Version list: loading then populate or error
-    if (versionList) versionList.innerHTML = '<div class="news-card" style="grid-column:1/-1;color:var(--text-dim);">Loading versions…</div>';
-    if (versionSelect) versionSelect.innerHTML = '<option value="">Loading…</option>';
-    try {
-        const versions = await VersionService.getVersions();
-        const releases = (versions || []).filter(v => v.type === 'release');
-        if (versionSelect && releases.length) {
-            versionSelect.innerHTML = releases.slice(0, 20).map(v =>
-                `<option value="${escapeHtml(v.id)}">${escapeHtml(v.id)}</option>`
-            ).join('');
-            if (!versionSelect.value) versionSelect.selectedIndex = 0;
-        }
-        if (versionList) {
-            const list = (versions || []).slice(0, 40);
-            versionList.innerHTML = list.length
-                ? list.map(v => `
-                    <div class="version-item news-card">
-                        <h4>${escapeHtml(v.id)}</h4>
-                        <small>${escapeHtml(v.type || 'release')}</small>
-                        <button class="btn-primary" style="padding: 8px 16px; font-size: 0.8rem; margin-top: 10px;" type="button" data-select-version="${escapeHtml(v.id)}">SELECT</button>
-                    </div>
-                `).join('')
-                : '<div class="news-card" style="grid-column:1/-1;color:var(--text-dim);">No versions found.</div>';
-        }
-        const modVersionSelect = document.getElementById('mod-version-select');
-        if (modVersionSelect && releases.length) {
-            const opts = releases.slice(0, 25).map(v => `<option value="${escapeHtml(v.id)}">${escapeHtml(v.id)}</option>`).join('');
-            modVersionSelect.innerHTML = '<option value="">Any version</option>' + opts;
-        }
-    } catch (e) {
-        console.error('Failed to load versions:', e);
-        if (versionSelect) {
-            versionSelect.innerHTML = '<option value="1.8.9">1.8.9</option><option value="1.20.1">1.20.1</option>';
-            versionSelect.selectedIndex = 0;
-        }
-        if (versionList) versionList.innerHTML = '<div class="news-card" style="grid-column:1/-1;color:#ff5555;">Failed to load versions. Check connection and refresh.</div>';
-        const modVerSelect = document.getElementById('mod-version-select');
-        if (modVerSelect) modVerSelect.innerHTML = '<option value="">Any version</option><option value="1.20.1">1.20.1</option><option value="1.8.9">1.8.9</option>';
+    // Version list: single load path with Retry
+    function doVersionLoad() {
+        if (versionList) versionList.innerHTML = '<div class="news-card" style="grid-column:1/-1;color:var(--text-dim);">Loading versions…</div>';
+        if (versionSelect) versionSelect.innerHTML = '<option value="">Loading…</option>';
+        VersionService.getVersions()
+            .then((versions) => {
+                const releases = (versions || []).filter(v => v.type === 'release');
+                if (versionSelect && releases.length) {
+                    versionSelect.innerHTML = releases.slice(0, 20).map(v =>
+                        `<option value="${escapeHtml(v.id)}">${escapeHtml(v.id)}</option>`
+                    ).join('');
+                    if (!versionSelect.value) versionSelect.selectedIndex = 0;
+                }
+                if (versionList) {
+                    const list = (versions || []).slice(0, 40);
+                    versionList.innerHTML = list.length ? list.map(v => `
+                        <div class="version-item news-card">
+                            <h4>${escapeHtml(v.id)}</h4>
+                            <small>${escapeHtml(v.type || 'release')}</small>
+                            <button class="btn-primary" style="padding: 8px 16px; font-size: 0.8rem; margin-top: 10px;" type="button" data-select-version="${escapeHtml(v.id)}">SELECT</button>
+                        </div>
+                    `).join('') : '<div class="news-card" style="grid-column:1/-1;color:var(--text-dim);">No versions found.</div>';
+                }
+                const modVersionSelect = document.getElementById('mod-version-select');
+                if (modVersionSelect && releases.length) {
+                    const opts = releases.slice(0, 25).map(v => `<option value="${escapeHtml(v.id)}">${escapeHtml(v.id)}</option>`).join('');
+                    modVersionSelect.innerHTML = '<option value="">Any version</option>' + opts;
+                }
+            })
+            .catch((e) => {
+                console.error('Failed to load versions:', e);
+                if (versionSelect) {
+                    versionSelect.innerHTML = '<option value="1.8.9">1.8.9</option><option value="1.20.1">1.20.1</option>';
+                    versionSelect.selectedIndex = 0;
+                }
+                if (versionList) {
+                    versionList.innerHTML = `
+                        <div class="news-card version-error-card" style="grid-column:1/-1;">
+                            <p style="color:#ff5555; margin-bottom: 10px;">${escapeHtml(e.message || 'Connection failed')}</p>
+                            <p style="color: var(--text-dim); font-size: 0.85rem; margin-bottom: 12px;">Run from a local server: <code style="background: var(--glass-bg); padding: 2px 6px; border-radius: 4px;">npx serve . -l 3000</code></p>
+                            <button type="button" class="btn-primary" id="version-retry-btn" style="padding: 8px 20px;">Retry</button>
+                        </div>
+                    `;
+                    const retryBtn = document.getElementById('version-retry-btn');
+                    if (retryBtn) retryBtn.addEventListener('click', doVersionLoad);
+                }
+                const modVerSelect = document.getElementById('mod-version-select');
+                if (modVerSelect) modVerSelect.innerHTML = '<option value="">Any version</option><option value="1.20.1">1.20.1</option><option value="1.8.9">1.8.9</option>';
+            });
     }
+    doVersionLoad();
 
     // Version list: delegate SELECT clicks and search
     if (versionList) {
@@ -304,15 +316,25 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (offlineUsernameInput) offlineUsernameInput.value = storedUsername;
     }
 
-    document.getElementById('btn-ms-login').addEventListener('click', async () => {
-        const user = await AuthService.login();
-        if (user) {
-            displayNameEl.textContent = user.name;
-            avatarEl.innerHTML = user.avatar ? `<img src="${escapeHtml(user.avatar)}" width="40" height="40" style="border-radius: 10px;" alt="">` : '';
-            if (statusEl) statusEl.textContent = 'Authenticated';
-            AuthService.setStoredProfile({ name: user.name, avatar: user.avatar });
-        }
-    });
+    const authMsgEl = document.getElementById('auth-msg');
+    const btnMsLogin = document.getElementById('btn-ms-login');
+    if (btnMsLogin) {
+        btnMsLogin.addEventListener('click', async () => {
+            if (authMsgEl) { authMsgEl.style.display = 'none'; authMsgEl.textContent = ''; }
+            const result = await AuthService.login();
+            if (result && result.name) {
+                displayNameEl.textContent = result.name;
+                avatarEl.innerHTML = result.avatar ? `<img src="${escapeHtml(result.avatar)}" width="40" height="40" style="border-radius: 10px;" alt="">` : '';
+                if (statusEl) statusEl.textContent = 'Authenticated';
+                AuthService.setStoredProfile({ name: result.name, avatar: result.avatar });
+                return;
+            }
+            if (result && result.configured === false && authMsgEl) {
+                authMsgEl.style.display = 'block';
+                authMsgEl.textContent = 'Microsoft login isn\'t set up on this server. Use Offline mode and set your username below.';
+            }
+        });
+    }
 
     if (memRange) {
         memRange.addEventListener('input', (e) => {
